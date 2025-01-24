@@ -146,7 +146,7 @@ type
 
   PubsubTicket* = ref object
     topic*: string
-    handler*: P2PPubSubCallback
+    handler*: P2PPubSubCallback2
     transp*: StreamTransport
 
   PubSubMessage* = object
@@ -162,8 +162,10 @@ type
   .}
   P2PPubSubCallback* = proc(
     api: DaemonAPI, ticket: PubsubTicket, message: PubSubMessage
-  ): Future[bool] {.async: (raises: [CatchableError]).}
-
+  ): Future[bool] {.gcsafe, raises: [CatchableError].}
+  P2PPubSubCallback2* = proc(
+    api: DaemonAPI, ticket: PubsubTicket, message: PubSubMessage
+  ): Future[bool] {.async:(raises: [CatchableError]).}
   DaemonError* = object of LPError
   DaemonRemoteError* = object of DaemonError
   DaemonLocalError* = object of DaemonError
@@ -1295,7 +1297,7 @@ proc pubsubLoop(api: DaemonAPI, ticket: PubsubTicket) {.async.} =
       break
 
 proc pubsubSubscribe*(
-    api: DaemonAPI, topic: string, handler: P2PPubSubCallback
+    api: DaemonAPI, topic: string, handler: P2PPubSubCallback2
 ): Future[PubsubTicket] {.async: (raises: [CatchableError]).} =
   ## Subscribe to topic ``topic``.
   var transp = await api.newConnection()
@@ -1311,6 +1313,13 @@ proc pubsubSubscribe*(
   except CatchableError as exc:
     await api.closeConnection(transp)
     raise exc
+
+proc pubsubSubscribe*(
+    api: DaemonAPI, topic: string, handler: P2PPubSubCallback
+): Future[PubsubTicket] {.async: (raises: [CatchableError]), deprecated: "Use P2PPubSubCallback2 instead".} =
+  proc wrap(api: DaemonAPI, ticket: PubsubTicket, message: PubSubMessage): Future[bool] {.async:(raises: [CatchableError]).} =
+    await handler(api, ticket, message)
+  await pubsubSubscribe(api, topic, wrap)
 
 proc shortLog*(pinfo: PeerInfo): string =
   ## Get string representation of ``PeerInfo`` object.
